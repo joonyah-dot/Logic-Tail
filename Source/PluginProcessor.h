@@ -1,11 +1,12 @@
 #pragma once
 #include <JuceHeader.h>
+#include "DSP/DelayEngine.h"
 
-class __PLUGIN_NAME__AudioProcessor : public juce::AudioProcessor
+class LogicTailAudioProcessor : public juce::AudioProcessor
 {
 public:
-    __PLUGIN_NAME__AudioProcessor();
-    ~__PLUGIN_NAME__AudioProcessor() override = default;
+    LogicTailAudioProcessor();
+    ~LogicTailAudioProcessor() override = default;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
@@ -27,9 +28,13 @@ public:
     const juce::String getProgramName (int) override { return {}; }
     void changeProgramName (int, const juce::String&) override {}
 
-    void getStateInformation (juce::MemoryBlock&) override {}
-    void setStateInformation (const void*, int) override {}
+    void getStateInformation (juce::MemoryBlock&) override;
+    void setStateInformation (const void*, int) override;
+
+    juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
 
 private:
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (__PLUGIN_NAME__AudioProcessor)
+    juce::AudioProcessorValueTreeState apvts;
+    DelayEngine delayEngine;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LogicTailAudioProcessor)
 };
