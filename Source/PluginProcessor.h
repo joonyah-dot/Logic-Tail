@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "DSP/DelayEngine.h"
+#include "DSP/ReverbEngine.h"
 
 class LogicTailAudioProcessor : public juce::AudioProcessor
 {
@@ -36,5 +37,6 @@ public:
 private:
     juce::AudioProcessorValueTreeState apvts;
     DelayEngine delayEngine;
+    ReverbEngine reverbEngine;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LogicTailAudioProcessor)
 };

@@ -34,14 +34,17 @@ private:
 class AllPassDelay
 {
 public:
+    AllPassDelay() = default;
     explicit AllPassDelay(int maxDelaySamples);
 
+    void init(int maxDelaySamples);
     void prepare(double sampleRate);
     void setDelay(float delaySamples);
     void setCoefficient(float g);
     float processSample(float input);
 
     void setModulation(float depthSamples, float rateHz, float phaseOffset);
+    void setModOffset(float offsetSamples);
     float processSampleModulated(float input);
 
     void reset();
@@ -60,6 +63,7 @@ private:
     double sampleRate = 44100.0;
     float baseDelay = 0.0f;
     float modDepth = 0.0f;
+    float modOffset = 0.0f;
     float lfoPhase = 0.0f;
     float lfoPhaseOffset = 0.0f;
     float lfoIncrement = 0.0f;

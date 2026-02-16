@@ -13,11 +13,13 @@ LogicTailAudioProcessor::LogicTailAudioProcessor()
 void LogicTailAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     delayEngine.prepare(sampleRate, samplesPerBlock);
+    reverbEngine.prepare(sampleRate, samplesPerBlock);
 }
 
 void LogicTailAudioProcessor::releaseResources()
 {
     delayEngine.reset();
+    reverbEngine.reset();
 }
 
 bool LogicTailAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -29,51 +31,107 @@ void LogicTailAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 {
     juce::ScopedNoDenormals noDenormals;
 
-    // Read parameters
-    float inputGainDb = apvts.getRawParameterValue(ParameterIDs::input_gain)->load();
-    float outputGainDb = apvts.getRawParameterValue(ParameterIDs::output_gain)->load();
-    float delayTimeMs = apvts.getRawParameterValue(ParameterIDs::delay_time)->load();
-    float feedbackPercent = apvts.getRawParameterValue(ParameterIDs::delay_feedback)->load();
-    float hpFreq = apvts.getRawParameterValue(ParameterIDs::delay_hp)->load();
-    float lpFreq = apvts.getRawParameterValue(ParameterIDs::delay_lp)->load();
-    float globalMixPercent = apvts.getRawParameterValue(ParameterIDs::global_mix)->load();
+    // Read reverb parameters
+    float gravity = apvts.getRawParameterValue(ParameterIDs::reverb_gravity)->load();
+    float size = apvts.getRawParameterValue(ParameterIDs::reverb_size)->load();
+    float preDelay = apvts.getRawParameterValue(ParameterIDs::reverb_predelay)->load();
+    float revFeedback = apvts.getRawParameterValue(ParameterIDs::reverb_feedback)->load();
+    float revModDepth = apvts.getRawParameterValue(ParameterIDs::reverb_mod_depth)->load();
+    float revModRate = apvts.getRawParameterValue(ParameterIDs::reverb_mod_rate)->load();
+    float loEQ = apvts.getRawParameterValue(ParameterIDs::reverb_lo)->load();
+    float hiEQ = apvts.getRawParameterValue(ParameterIDs::reverb_hi)->load();
+    float resonance = apvts.getRawParameterValue(ParameterIDs::reverb_resonance)->load();
+    bool freeze = apvts.getRawParameterValue(ParameterIDs::reverb_freeze)->load() > 0.5f;
+    bool killDry = apvts.getRawParameterValue(ParameterIDs::reverb_kill_dry)->load() > 0.5f;
 
-    // Convert to linear values
-    float inputGain = juce::Decibels::decibelsToGain(inputGainDb);
-    float outputGain = juce::Decibels::decibelsToGain(outputGainDb);
-    float wetMix = globalMixPercent / 100.0f;
-    float dryMix = 1.0f - wetMix;
+    // Read delay parameters
+    float delTime = apvts.getRawParameterValue(ParameterIDs::delay_time)->load();
+    float delFeedback = apvts.getRawParameterValue(ParameterIDs::delay_feedback)->load();
+    float delHP = apvts.getRawParameterValue(ParameterIDs::delay_hp)->load();
+    float delLP = apvts.getRawParameterValue(ParameterIDs::delay_lp)->load();
+
+    // Read global parameters
+    int routingIdx = static_cast<int>(apvts.getRawParameterValue(ParameterIDs::routing_mode)->load());
+    float balance = apvts.getRawParameterValue(ParameterIDs::parallel_balance)->load() / 100.0f;
+    float mix = apvts.getRawParameterValue(ParameterIDs::global_mix)->load() / 100.0f;
+    float inGain = juce::Decibels::decibelsToGain(apvts.getRawParameterValue(ParameterIDs::input_gain)->load());
+    float outGain = juce::Decibels::decibelsToGain(apvts.getRawParameterValue(ParameterIDs::output_gain)->load());
+
+    // Update reverb engine
+    reverbEngine.setGravity(gravity);
+    reverbEngine.setSize(size);
+    reverbEngine.setPreDelay(preDelay);
+    reverbEngine.setFeedback(revFeedback);
+    reverbEngine.setModulation(revModDepth, revModRate);
+    reverbEngine.setLoEQ(loEQ);
+    reverbEngine.setHiEQ(hiEQ);
+    reverbEngine.setResonance(resonance);
+    reverbEngine.setFreeze(freeze);
+    reverbEngine.setKillDry(killDry);
+
+    // Update delay engine
+    delayEngine.setDelayTime(delTime);
+    delayEngine.setFeedback(delFeedback);
+    delayEngine.setHighPassFreq(delHP);
+    delayEngine.setLowPassFreq(delLP);
 
     // Apply input gain
-    buffer.applyGain(inputGain);
+    buffer.applyGain(inGain);
 
     // Store dry signal
     juce::AudioBuffer<float> dryBuffer;
     dryBuffer.makeCopyOf(buffer);
 
-    // Configure delay engine
-    delayEngine.setDelayTime(delayTimeMs);
-    delayEngine.setFeedback(feedbackPercent);
-    delayEngine.setHighPassFreq(hpFreq);
-    delayEngine.setLowPassFreq(lpFreq);
+    // --- ROUTING ---
+    if (routingIdx == 0)
+    {
+        // Series: Delay → Reverb
+        delayEngine.process(buffer);
+        reverbEngine.process(buffer);
+    }
+    else if (routingIdx == 1)
+    {
+        // Series: Reverb → Delay
+        reverbEngine.process(buffer);
+        delayEngine.process(buffer);
+    }
+    else
+    {
+        // Parallel
+        juce::AudioBuffer<float> reverbBuffer;
+        reverbBuffer.makeCopyOf(buffer);
 
-    // Process wet signal
-    delayEngine.process(buffer);
+        delayEngine.process(buffer);        // buffer now = delay wet
+        reverbEngine.process(reverbBuffer); // reverbBuffer = reverb wet
 
-    // Mix dry/wet
+        // Blend: balance 0 = all delay, 100 = all reverb
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        {
+            auto* delData = buffer.getWritePointer(ch);
+            const auto* revData = reverbBuffer.getReadPointer(ch);
+            for (int i = 0; i < buffer.getNumSamples(); ++i)
+            {
+                delData[i] = delData[i] * (1.0f - balance) + revData[i] * balance;
+            }
+        }
+    }
+
+    // --- DRY/WET MIX ---
     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
     {
-        auto* wetData = buffer.getWritePointer(ch);
-        const auto* dryData = dryBuffer.getReadPointer(ch);
-
+        auto* wet = buffer.getWritePointer(ch);
+        const auto* dry = dryBuffer.getReadPointer(ch);
         for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
-            wetData[i] = dryData[i] * dryMix + wetData[i] * wetMix;
+            if (killDry)
+                wet[i] = wet[i];  // 100% wet when kill dry is on
+            else
+                wet[i] = dry[i] * (1.0f - mix) + wet[i] * mix;
         }
     }
 
     // Apply output gain
-    buffer.applyGain(outputGain);
+    buffer.applyGain(outGain);
 }
 
 juce::AudioProcessorEditor* LogicTailAudioProcessor::createEditor()

@@ -35,6 +35,8 @@ target_sources(LogicTail PRIVATE
     Source/DSP/FilterUtils.h
     Source/DSP/DelayEngine.cpp
     Source/DSP/DelayEngine.h
+    Source/DSP/ReverbEngine.cpp
+    Source/DSP/ReverbEngine.h
 )
 
 target_compile_features(LogicTail PRIVATE cxx_std_17)

@@ -57,6 +57,11 @@ void LowPassFilter::reset()
 // AllPassDelay
 AllPassDelay::AllPassDelay(int maxDelaySamples)
 {
+    init(maxDelaySamples);
+}
+
+void AllPassDelay::init(int maxDelaySamples)
+{
     bufferSize = juce::nextPowerOfTwo(maxDelaySamples);
     bufferMask = bufferSize - 1;
     buffer.resize(bufferSize, 0.0f);
@@ -111,16 +116,15 @@ void AllPassDelay::setModulation(float depthSamples, float rateHz, float phaseOf
     lfoIncrement = (rateHz * juce::MathConstants<float>::twoPi) / static_cast<float>(sampleRate);
 }
 
+void AllPassDelay::setModOffset(float offsetSamples)
+{
+    modOffset = offsetSamples;
+}
+
 float AllPassDelay::processSampleModulated(float input)
 {
-    // Update LFO
-    lfoPhase += lfoIncrement;
-    if (lfoPhase >= juce::MathConstants<float>::twoPi)
-        lfoPhase -= juce::MathConstants<float>::twoPi;
-
-    // Calculate modulated delay
-    float lfo = std::sin(lfoPhase + lfoPhaseOffset);
-    float modulatedDelay = baseDelay + lfo * modDepth;
+    // Use external modOffset for modulation (set via setModOffset)
+    float modulatedDelay = delaySamples + modOffset;
     modulatedDelay = juce::jlimit(1.0f, static_cast<float>(bufferSize - 4), modulatedDelay);
 
     // Same as processSample but with modulatedDelay
