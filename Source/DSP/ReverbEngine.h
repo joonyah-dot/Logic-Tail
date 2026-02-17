@@ -54,6 +54,10 @@ private:
     juce::dsp::IIR::Filter<float> hiShelfL;
     juce::dsp::IIR::Filter<float> hiShelfR;
 
+    // Dedicated feedback damping filters (always-on decay)
+    juce::dsp::IIR::Filter<float> feedbackDampingL;
+    juce::dsp::IIR::Filter<float> feedbackDampingR;
+
     // LFO phases (one per allpass)
     float sharedLfoPhases[kNumSharedAllpasses];
     float leftLfoPhases[kNumChannelAllpasses];

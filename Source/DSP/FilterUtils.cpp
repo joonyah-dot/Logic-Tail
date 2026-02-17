@@ -85,24 +85,25 @@ void AllPassDelay::setCoefficient(float g)
 
 float AllPassDelay::processSample(float input)
 {
-    // Calculate read position
-    float readPos = static_cast<float>(writePos) - delaySamples;
-    if (readPos < 0.0f)
-        readPos += bufferSize;
+    // Split delay into integer and fractional parts
+    int delayInt = static_cast<int>(delaySamples);
+    float frac = delaySamples - static_cast<float>(delayInt);
 
-    // Linear interpolation
-    int index0 = static_cast<int>(readPos);
-    int index1 = (index0 + 1) & bufferMask;
-    float frac = readPos - index0;
+    // Calculate read positions with proper wrapping
+    int readPos0 = (writePos - delayInt + static_cast<int>(bufferSize)) & bufferMask;
+    int readPos1 = (writePos - delayInt - 1 + static_cast<int>(bufferSize)) & bufferMask;
 
-    float delayed = buffer[index0] + frac * (buffer[index1] - buffer[index0]);
+    // Linear interpolation with safe indices — reads v[n-D]
+    float delayed = buffer[readPos0] + frac * (buffer[readPos1] - buffer[readPos0]);
 
-    // All-pass: output = -g*input + delayed + g*delayedOutput
-    float output = -coefficient * input + delayed + coefficient * delayedOutput;
-    delayedOutput = output;
+    // Schroeder allpass:
+    //   v[n]   = input + g * v[n-D]     (state variable stored in buffer)
+    //   y[n]   = v[n-D] - g * v[n]      (energy-preserving, truly unity gain)
+    float v = input + coefficient * delayed;
+    float output = delayed - coefficient * v;
 
-    // Write input to buffer
-    buffer[writePos] = input;
+    // Write state variable v (NOT input) to buffer — this is critical for correct allpass behavior
+    buffer[writePos & bufferMask] = v;
     writePos = (writePos + 1) & bufferMask;
 
     return output;
@@ -123,24 +124,28 @@ void AllPassDelay::setModOffset(float offsetSamples)
 
 float AllPassDelay::processSampleModulated(float input)
 {
-    // Use external modOffset for modulation (set via setModOffset)
-    float modulatedDelay = delaySamples + modOffset;
-    modulatedDelay = juce::jlimit(1.0f, static_cast<float>(bufferSize - 4), modulatedDelay);
+    // Clamp total delay to valid range
+    float totalDelay = juce::jlimit(1.0f, static_cast<float>(bufferSize - 2), delaySamples + modOffset);
 
-    // Same as processSample but with modulatedDelay
-    float readPos = static_cast<float>(writePos) - modulatedDelay;
-    if (readPos < 0.0f)
-        readPos += bufferSize;
+    // Split into integer and fractional parts
+    int delayInt = static_cast<int>(totalDelay);
+    float frac = totalDelay - static_cast<float>(delayInt);
 
-    int index0 = static_cast<int>(readPos);
-    int index1 = (index0 + 1) & bufferMask;
-    float frac = readPos - index0;
+    // Calculate read positions — add bufferSize before masking to handle negative values
+    int readPos0 = (writePos - delayInt + static_cast<int>(bufferSize)) & bufferMask;
+    int readPos1 = (writePos - delayInt - 1 + static_cast<int>(bufferSize)) & bufferMask;
 
-    float delayed = buffer[index0] + frac * (buffer[index1] - buffer[index0]);
-    float output = -coefficient * input + delayed + coefficient * delayedOutput;
-    delayedOutput = output;
+    // Linear interpolation — reads v[n-D]
+    float delayed = buffer[readPos0] + frac * (buffer[readPos1] - buffer[readPos0]);
 
-    buffer[writePos] = input;
+    // Schroeder allpass (identical formula to processSample):
+    //   v[n]   = input + g * v[n-D]     (state variable stored in buffer)
+    //   y[n]   = v[n-D] - g * v[n]      (energy-preserving, truly unity gain)
+    float v = input + coefficient * delayed;
+    float output = delayed - coefficient * v;
+
+    // Write state variable v (NOT input) to buffer
+    buffer[writePos & bufferMask] = v;
     writePos = (writePos + 1) & bufferMask;
 
     return output;

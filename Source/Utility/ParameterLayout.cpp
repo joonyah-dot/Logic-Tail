@@ -34,7 +34,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         juce::ParameterID{ParameterIDs::reverb_feedback, 1},
         "Feedback",
         juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f),
-        30.0f,
+        0.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")
     ));
 
