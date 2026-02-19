@@ -22,19 +22,19 @@ public:
     void reset();
 
 private:
-    static constexpr int kNumSharedAllpasses = 12;
-    static constexpr int kNumChannelAllpasses = 8;
+    static constexpr int kNumSharedAllpasses = 6;      // Shorter mono chain → faster onset
+    static constexpr int kNumChannelAllpasses = 10;    // Longer per-channel chains → density
     static constexpr int kMaxPreDelaySamples = 96000;
 
-    // Delay lengths at 44.1kHz (in samples)
+    // Delay lengths at 44.1kHz (in samples) — all prime numbers for incoherent reflections
     static constexpr int sharedDelays[kNumSharedAllpasses] = {
-        1049, 1223, 1429, 1597, 1777, 1951, 2131, 2309, 2503, 2687, 2857, 3011
+        1049, 1223, 1429, 1597, 1777, 1951
     };
     static constexpr int leftDelays[kNumChannelAllpasses] = {
-        1051, 1249, 1453, 1627, 1801, 1979, 2153, 2333
+        1051, 1249, 1453, 1627, 1801, 1979, 2153, 2333, 2521, 2699
     };
     static constexpr int rightDelays[kNumChannelAllpasses] = {
-        1063, 1259, 1471, 1637, 1811, 1997, 2161, 2351
+        1063, 1259, 1471, 1637, 1811, 1997, 2161, 2351, 2539, 2713
     };
 
     // Allpass chains
@@ -48,11 +48,17 @@ private:
     int preDelayWritePos = 0;
     float preDelaySamples = 0.0f;
 
-    // Shelving EQ filters
+    // Feedback path shelving EQ (cut only — boost here causes runaway)
     juce::dsp::IIR::Filter<float> loShelfL;
     juce::dsp::IIR::Filter<float> loShelfR;
     juce::dsp::IIR::Filter<float> hiShelfL;
     juce::dsp::IIR::Filter<float> hiShelfR;
+
+    // Output shelving EQ (boost only — applied after the feedback loop)
+    juce::dsp::IIR::Filter<float> outputLoShelfL;
+    juce::dsp::IIR::Filter<float> outputLoShelfR;
+    juce::dsp::IIR::Filter<float> outputHiShelfL;
+    juce::dsp::IIR::Filter<float> outputHiShelfR;
 
     // Dedicated feedback damping filters (always-on decay)
     juce::dsp::IIR::Filter<float> feedbackDampingL;
@@ -72,9 +78,9 @@ private:
     float feedbackAmount = 0.0f;
     float prevFeedbackL = 0.0f;
     float prevFeedbackR = 0.0f;
-    float currentLoEQ = 0.0f;
-    float currentHiEQ = 0.0f;
-    float currentResonance = 0.707f;
+    float currentLoEQdB = 0.0f;
+    float currentHiEQdB = 0.0f;
+    float resonanceQ = 0.707f;
     bool isFrozen = false;
     bool killDrySignal = false;
 };

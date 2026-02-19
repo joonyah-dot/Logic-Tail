@@ -97,21 +97,35 @@ void LogicTailAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     }
     else
     {
-        // Parallel
-        juce::AudioBuffer<float> reverbBuffer;
-        reverbBuffer.makeCopyOf(buffer);
-
-        delayEngine.process(buffer);        // buffer now = delay wet
-        reverbEngine.process(reverbBuffer); // reverbBuffer = reverb wet
-
-        // Blend: balance 0 = all delay, 100 = all reverb
-        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        // Parallel — skip unused engine when balance is at an extreme
+        if (balance >= 0.99f)
         {
-            auto* delData = buffer.getWritePointer(ch);
-            const auto* revData = reverbBuffer.getReadPointer(ch);
-            for (int i = 0; i < buffer.getNumSamples(); ++i)
+            // 100% reverb — skip delay entirely
+            reverbEngine.process(buffer);
+        }
+        else if (balance <= 0.01f)
+        {
+            // 100% delay — skip reverb entirely
+            delayEngine.process(buffer);
+        }
+        else
+        {
+            // Blend both engines
+            juce::AudioBuffer<float> reverbBuffer;
+            reverbBuffer.makeCopyOf(buffer);
+
+            delayEngine.process(buffer);        // buffer now = delay wet
+            reverbEngine.process(reverbBuffer); // reverbBuffer = reverb wet
+
+            // Blend: balance 0 = all delay, 100 = all reverb
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
             {
-                delData[i] = delData[i] * (1.0f - balance) + revData[i] * balance;
+                auto* delData = buffer.getWritePointer(ch);
+                const auto* revData = reverbBuffer.getReadPointer(ch);
+                for (int i = 0; i < buffer.getNumSamples(); ++i)
+                {
+                    delData[i] = delData[i] * (1.0f - balance) + revData[i] * balance;
+                }
             }
         }
     }

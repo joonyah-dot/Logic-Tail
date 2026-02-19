@@ -41,6 +41,7 @@ public:
     void prepare(double sampleRate);
     void setDelay(float delaySamples);
     void setCoefficient(float g);
+    void setDecayGain(float gain);
     float processSample(float input);
 
     void setModulation(float depthSamples, float rateHz, float phaseOffset);
@@ -57,6 +58,7 @@ private:
 
     float delaySamples = 0.0f;
     float coefficient = 0.7f;
+    float decayGain = 1.0f;
     float delayedOutput = 0.0f;
 
     // Modulation

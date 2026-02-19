@@ -83,6 +83,11 @@ void AllPassDelay::setCoefficient(float g)
     coefficient = juce::jlimit(-0.99f, 0.99f, g);
 }
 
+void AllPassDelay::setDecayGain(float gain)
+{
+    decayGain = juce::jlimit(0.99f, 1.0f, gain);
+}
+
 float AllPassDelay::processSample(float input)
 {
     // Split delay into integer and fractional parts
@@ -95,6 +100,9 @@ float AllPassDelay::processSample(float input)
 
     // Linear interpolation with safe indices — reads v[n-D]
     float delayed = buffer[readPos0] + frac * (buffer[readPos1] - buffer[readPos0]);
+
+    // Apply per-allpass decay gain (gentle energy loss per stage)
+    delayed *= decayGain;
 
     // Schroeder allpass:
     //   v[n]   = input + g * v[n-D]     (state variable stored in buffer)
@@ -137,6 +145,9 @@ float AllPassDelay::processSampleModulated(float input)
 
     // Linear interpolation — reads v[n-D]
     float delayed = buffer[readPos0] + frac * (buffer[readPos1] - buffer[readPos0]);
+
+    // Apply per-allpass decay gain (gentle energy loss per stage)
+    delayed *= decayGain;
 
     // Schroeder allpass (identical formula to processSample):
     //   v[n]   = input + g * v[n-D]     (state variable stored in buffer)
