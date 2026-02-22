@@ -155,10 +155,7 @@ void ReverbEngine::setPreDelay(float ms)
 void ReverbEngine::setFeedback(float percent)
 {
     feedbackAmount = juce::jlimit(0.0f, 0.85f, (percent / 100.0f) * 0.85f);
-
-    // Resonance peak gain depends on feedback — recalculate to stay stable
-    if (currentResonance > 0.5f)
-        setResonance(currentResonance);
+    updateResonancePeaks();
 }
 
 void ReverbEngine::setModulation(float depthPercent, float rateHz)
@@ -184,6 +181,9 @@ void ReverbEngine::setLoEQ(float dB)
         currentSampleRate, 350.0f, resonanceQ, outputGain);
     outputLoShelfL.coefficients = outCoeffs;
     outputLoShelfR.coefficients = outCoeffs;
+
+    // Resonance peak gain at 350 Hz must be scaled back when Lo EQ is cutting
+    updateResonancePeaks();
 }
 
 void ReverbEngine::setHiEQ(float dB)
@@ -203,15 +203,27 @@ void ReverbEngine::setHiEQ(float dB)
         currentSampleRate, 2000.0f, resonanceQ, outputGain);
     outputHiShelfL.coefficients = outCoeffs;
     outputHiShelfR.coefficients = outCoeffs;
+
+    // Resonance peak gain at 2000 Hz must be scaled back when Hi EQ is cutting
+    updateResonancePeaks();
 }
 
 void ReverbEngine::setResonance(float percent)
 {
     currentResonance = percent;
+    // Update shelving Q first so the shelf coefficients use the right Q when
+    // setLoEQ/setHiEQ are called below. Those calls also invoke updateResonancePeaks,
+    // so we don't need to call it separately here.
+    resonanceQ = juce::jmap(percent, 0.0f, 100.0f, 0.707f, 2.0f);
+    setLoEQ(currentLoEQdB);   // Updates shelves + peaks
+    setHiEQ(currentHiEQdB);   // Updates shelves + peaks
+}
 
-    if (percent < 0.5f)
+void ReverbEngine::updateResonancePeaks()
+{
+    if (currentResonance < 0.5f)
     {
-        // Off — flat peaking filters (unity gain)
+        // Resonance off — unity gain peaks
         auto flatLo = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
             currentSampleRate, 350.0f, 1.0f, 1.0f);
         resPeakLoL.coefficients = flatLo;
@@ -221,33 +233,35 @@ void ReverbEngine::setResonance(float percent)
             currentSampleRate, 2000.0f, 1.0f, 1.0f);
         resPeakHiL.coefficients = flatHi;
         resPeakHiR.coefficients = flatHi;
-    }
-    else
-    {
-        float q = juce::jmap(percent, 0.0f, 100.0f, 0.5f, 6.0f);
-
-        // Scale max peak gain inversely with feedback:
-        // Low feedback (0.0)   → up to +6 dB — strong resonant character
-        // High feedback (0.85) → up to +1.5 dB — prevents compounding through the loop
-        float maxGainDB = juce::jmap(feedbackAmount, 0.0f, 0.85f, 6.0f, 1.5f);
-        float gainDB    = juce::jmap(percent, 0.0f, 100.0f, 0.0f, maxGainDB);
-        float gain      = juce::Decibels::decibelsToGain(gainDB);
-
-        auto loCoeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
-            currentSampleRate, 350.0f, q, gain);
-        resPeakLoL.coefficients = loCoeffs;
-        resPeakLoR.coefficients = loCoeffs;
-
-        auto hiCoeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
-            currentSampleRate, 2000.0f, q, gain);
-        resPeakHiL.coefficients = hiCoeffs;
-        resPeakHiR.coefficients = hiCoeffs;
+        return;
     }
 
-    // Update shelving Q and re-apply EQ so shelf shape tracks resonance
-    resonanceQ = juce::jmap(percent, 0.0f, 100.0f, 0.707f, 2.0f);
-    setLoEQ(currentLoEQdB);
-    setHiEQ(currentHiEQdB);
+    float q = juce::jmap(currentResonance, 0.0f, 100.0f, 0.5f, 6.0f);
+
+    // Base max gain scales inversely with feedback (prevents loop compounding)
+    float maxGainDB = juce::jmap(feedbackAmount, 0.0f, 0.85f, 6.0f, 1.5f);
+
+    // EQ penalty: when a shelf is cutting, reduce the corresponding peak gain.
+    // At -12 dB cut the penalty is 0.0 (peak disabled), at 0 dB it is 1.0 (no penalty).
+    float loEQPenalty = (currentLoEQdB < 0.0f)
+        ? juce::jlimit(0.0f, 1.0f, juce::jmap(currentLoEQdB, -12.0f, 0.0f, 0.0f, 1.0f))
+        : 1.0f;
+    float hiEQPenalty = (currentHiEQdB < 0.0f)
+        ? juce::jlimit(0.0f, 1.0f, juce::jmap(currentHiEQdB, -12.0f, 0.0f, 0.0f, 1.0f))
+        : 1.0f;
+
+    float loGainDB = juce::jmap(currentResonance, 0.0f, 100.0f, 0.0f, maxGainDB) * loEQPenalty;
+    float hiGainDB = juce::jmap(currentResonance, 0.0f, 100.0f, 0.0f, maxGainDB) * hiEQPenalty;
+
+    auto loCoeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+        currentSampleRate, 350.0f, q, juce::Decibels::decibelsToGain(loGainDB));
+    resPeakLoL.coefficients = loCoeffs;
+    resPeakLoR.coefficients = loCoeffs;
+
+    auto hiCoeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+        currentSampleRate, 2000.0f, q, juce::Decibels::decibelsToGain(hiGainDB));
+    resPeakHiL.coefficients = hiCoeffs;
+    resPeakHiR.coefficients = hiCoeffs;
 }
 
 void ReverbEngine::setFreeze(bool frozen)

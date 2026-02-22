@@ -22,6 +22,10 @@ public:
     void reset();
 
 private:
+    // Updates only the resonance peak filter coefficients.
+    // Called from setResonance, setFeedback, setLoEQ, and setHiEQ.
+    // Does NOT touch shelving filters — avoids infinite recursion.
+    void updateResonancePeaks();
     static constexpr int kNumSharedAllpasses = 6;      // Shorter mono chain → faster onset
     static constexpr int kNumChannelAllpasses = 10;    // Longer per-channel chains → density
     static constexpr int kMaxPreDelaySamples = 96000;
