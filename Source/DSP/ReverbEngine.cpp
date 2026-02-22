@@ -2,7 +2,6 @@
 
 ReverbEngine::ReverbEngine()
 {
-    // Initialize all state variables to safe defaults
     prevFeedbackL = 0.0f;
     prevFeedbackR = 0.0f;
     feedbackAmount = 0.0f;
@@ -14,16 +13,15 @@ ReverbEngine::ReverbEngine()
     killDrySignal = false;
     currentLoEQdB = 0.0f;
     currentHiEQdB = 0.0f;
+    currentResonance = 0.0f;
     resonanceQ = 0.707f;
 
-    // Initialize LFO phases with even distribution to decorrelate modulation
     for (int i = 0; i < kNumSharedAllpasses; ++i)
         sharedLfoPhases[i] = (juce::MathConstants<float>::twoPi * i) / kNumSharedAllpasses;
 
     for (int i = 0; i < kNumChannelAllpasses; ++i)
     {
         leftLfoPhases[i]  = (juce::MathConstants<float>::twoPi * i) / kNumChannelAllpasses;
-        // 90° offset from left for decorrelation
         rightLfoPhases[i] = (juce::MathConstants<float>::twoPi * i) / kNumChannelAllpasses
                             + juce::MathConstants<float>::halfPi;
     }
@@ -34,7 +32,6 @@ void ReverbEngine::prepare(double sampleRate, int samplesPerBlock)
     currentSampleRate = sampleRate;
     sampleRateScale = static_cast<float>(sampleRate / 44100.0);
 
-    // Initialize shared allpass chain
     for (int i = 0; i < kNumSharedAllpasses; ++i)
     {
         int baseDelay = sharedDelays[i];
@@ -44,86 +41,87 @@ void ReverbEngine::prepare(double sampleRate, int samplesPerBlock)
         sharedAllpasses[i].setDelay(baseDelay * sampleRateScale * currentSize);
     }
 
-    // Initialize left channel allpasses
     for (int i = 0; i < kNumChannelAllpasses; ++i)
     {
-        int baseDelay = leftDelays[i];
-        int maxDelay = static_cast<int>(baseDelay * sampleRateScale * 1.3f);
-        leftAllpasses[i].init(maxDelay);
+        int lBase = leftDelays[i];
+        int lMax  = static_cast<int>(lBase * sampleRateScale * 1.3f);
+        leftAllpasses[i].init(lMax);
         leftAllpasses[i].prepare(sampleRate);
-        leftAllpasses[i].setDelay(baseDelay * sampleRateScale * currentSize);
-    }
+        leftAllpasses[i].setDelay(lBase * sampleRateScale * currentSize);
 
-    // Initialize right channel allpasses
-    for (int i = 0; i < kNumChannelAllpasses; ++i)
-    {
-        int baseDelay = rightDelays[i];
-        int maxDelay = static_cast<int>(baseDelay * sampleRateScale * 1.3f);
-        rightAllpasses[i].init(maxDelay);
+        int rBase = rightDelays[i];
+        int rMax  = static_cast<int>(rBase * sampleRateScale * 1.3f);
+        rightAllpasses[i].init(rMax);
         rightAllpasses[i].prepare(sampleRate);
-        rightAllpasses[i].setDelay(baseDelay * sampleRateScale * currentSize);
+        rightAllpasses[i].setDelay(rBase * sampleRateScale * currentSize);
     }
 
-    // Allocate pre-delay buffer (power of 2 for efficient wrapping)
+    // Pre-delay buffer
     int preDelaySize = juce::nextPowerOfTwo(kMaxPreDelaySamples);
     preDelayBuffer.resize(preDelaySize, 0.0f);
     preDelayMask = preDelaySize - 1;
     preDelayWritePos = 0;
 
-    // Prepare shelving EQ filters (feedback path + output path)
     juce::dsp::ProcessSpec spec{sampleRate, static_cast<juce::uint32>(samplesPerBlock), 1};
-    loShelfL.prepare(spec);
-    loShelfR.prepare(spec);
-    hiShelfL.prepare(spec);
-    hiShelfR.prepare(spec);
+
+    // Feedback path filters
+    feedbackDampingL.prepare(spec);
+    feedbackDampingR.prepare(spec);
+    feedbackHPL.prepare(spec);
+    feedbackHPR.prepare(spec);
+    resPeakLoL.prepare(spec);
+    resPeakLoR.prepare(spec);
+    resPeakHiL.prepare(spec);
+    resPeakHiR.prepare(spec);
+    feedbackLoShelfL.prepare(spec);
+    feedbackLoShelfR.prepare(spec);
+    feedbackHiShelfL.prepare(spec);
+    feedbackHiShelfR.prepare(spec);
+
+    // Output path filters
     outputLoShelfL.prepare(spec);
     outputLoShelfR.prepare(spec);
     outputHiShelfL.prepare(spec);
     outputHiShelfR.prepare(spec);
 
-    // Prepare dedicated feedback damping filters (always-on decay mechanism)
-    feedbackDampingL.prepare(spec);
-    feedbackDampingR.prepare(spec);
+    // Feedback damping: LP at 10kHz (hi roll-off) + HP at 80Hz (lo roll-off)
+    auto lpCoeffs = juce::dsp::IIR::Coefficients<float>::makeFirstOrderLowPass(sampleRate, 10000.0f);
+    feedbackDampingL.coefficients = lpCoeffs;
+    feedbackDampingR.coefficients = lpCoeffs;
 
-    // Set damping filters to 12kHz lowpass (gentle high-frequency decay)
-    auto dampingCoeffs = juce::dsp::IIR::Coefficients<float>::makeFirstOrderLowPass(sampleRate, 12000.0f);
-    feedbackDampingL.coefficients = dampingCoeffs;
-    feedbackDampingR.coefficients = dampingCoeffs;
+    auto hpCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighPass(sampleRate, 80.0f);
+    feedbackHPL.coefficients = hpCoeffs;
+    feedbackHPR.coefficients = hpCoeffs;
 
-    // Initialize EQ to flat (0 dB, unity)
+    // Initialize EQ and resonance to flat
     resonanceQ = 0.707f;
+    currentResonance = 0.0f;
     setLoEQ(0.0f);
     setHiEQ(0.0f);
+    setResonance(0.0f);
 
     reset();
 }
 
 void ReverbEngine::setGravity(float gravity)
 {
-    // Map gravity to allpass coefficient, per-allpass decay gain, and early tap scaling.
-    float g;
-    float decay;
+    float g, decay;
     if (gravity >= 0.0f)
     {
-        // Positive gravity: narrower coefficient range keeps reverb consistently dense
-        g = juce::jmap(gravity, 0.0f, 100.0f, 0.6f, 0.7f);
-        // Longer decay range: ~4-5s at gravity=0, ~10-15s at gravity=100
+        g     = juce::jmap(gravity, 0.0f, 100.0f, 0.6f, 0.7f);
         decay = juce::jmap(gravity, 0.0f, 100.0f, 0.99997f, 0.999995f);
     }
     else
     {
-        // Negative gravity: reverse/swell character, decays faster
-        g = juce::jmap(gravity, -100.0f, 0.0f, -0.7f, 0.6f);
+        g     = juce::jmap(gravity, -100.0f, 0.0f, -0.7f, 0.6f);
         decay = juce::jmap(gravity, -100.0f, 0.0f, 0.99990f, 0.99997f);
     }
 
-    // Apply coefficient and decay gain to all allpasses
     for (int i = 0; i < kNumSharedAllpasses; ++i)
     {
         sharedAllpasses[i].setCoefficient(g);
         sharedAllpasses[i].setDecayGain(decay);
     }
-
     for (int i = 0; i < kNumChannelAllpasses; ++i)
     {
         leftAllpasses[i].setCoefficient(g);
@@ -135,45 +133,37 @@ void ReverbEngine::setGravity(float gravity)
 
 void ReverbEngine::setSize(float size)
 {
-    // Map 0-120 to scale factor
-    float scaleFactor = size / 100.0f;
-    scaleFactor = juce::jlimit(0.05f, 1.3f, scaleFactor);
+    float scaleFactor = juce::jlimit(0.05f, 1.3f, size / 100.0f);
     currentSize = scaleFactor;
 
-    // Update all allpass delay lengths
     for (int i = 0; i < kNumSharedAllpasses; ++i)
-    {
-        float newDelay = sharedDelays[i] * sampleRateScale * currentSize;
-        sharedAllpasses[i].setDelay(newDelay);
-    }
+        sharedAllpasses[i].setDelay(sharedDelays[i] * sampleRateScale * currentSize);
 
     for (int i = 0; i < kNumChannelAllpasses; ++i)
     {
-        leftAllpasses[i].setDelay(leftDelays[i] * sampleRateScale * currentSize);
+        leftAllpasses[i].setDelay(leftDelays[i]   * sampleRateScale * currentSize);
         rightAllpasses[i].setDelay(rightDelays[i] * sampleRateScale * currentSize);
     }
 }
 
 void ReverbEngine::setPreDelay(float ms)
 {
-    preDelaySamples = (ms / 1000.0f) * static_cast<float>(currentSampleRate);
-    preDelaySamples = juce::jlimit(0.0f, static_cast<float>(kMaxPreDelaySamples - 1), preDelaySamples);
+    preDelaySamples = juce::jlimit(0.0f, static_cast<float>(kMaxPreDelaySamples - 1),
+                                   (ms / 1000.0f) * static_cast<float>(currentSampleRate));
 }
 
 void ReverbEngine::setFeedback(float percent)
 {
-    // Scale 0-100% → 0-0.85. The 12kHz damping filter in the feedback path
-    // prevents runaway even at high feedback values.
-    feedbackAmount = (percent / 100.0f) * 0.85f;
-    feedbackAmount = juce::jlimit(0.0f, 0.85f, feedbackAmount);
+    feedbackAmount = juce::jlimit(0.0f, 0.85f, (percent / 100.0f) * 0.85f);
+
+    // Resonance peak gain depends on feedback — recalculate to stay stable
+    if (currentResonance > 0.5f)
+        setResonance(currentResonance);
 }
 
 void ReverbEngine::setModulation(float depthPercent, float rateHz)
 {
-    // Map depth 0-100% to 0-12 samples
     modDepthSamples = juce::jmap(depthPercent, 0.0f, 100.0f, 0.0f, 12.0f);
-
-    // Calculate LFO phase increment
     lfoPhaseInc = (rateHz * juce::MathConstants<float>::twoPi) / static_cast<float>(currentSampleRate);
 }
 
@@ -181,60 +171,81 @@ void ReverbEngine::setLoEQ(float dB)
 {
     currentLoEQdB = dB;
 
-    auto unityCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowShelf(
-        currentSampleRate, 350.0f, resonanceQ, 1.0f);
-    auto shapeCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowShelf(
-        currentSampleRate, 350.0f, resonanceQ, juce::Decibels::decibelsToGain(dB));
+    // Feedback path: cut only (std::min guarantees gain <= 0 dB in the loop)
+    float feedbackGain = juce::Decibels::decibelsToGain(std::min(dB, 0.0f));
+    auto fbCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowShelf(
+        currentSampleRate, 350.0f, resonanceQ, feedbackGain);
+    feedbackLoShelfL.coefficients = fbCoeffs;
+    feedbackLoShelfR.coefficients = fbCoeffs;
 
-    if (dB <= 0.0f)
-    {
-        // Cut: apply in feedback path to shape decay, output stays flat
-        loShelfL.coefficients = shapeCoeffs;
-        loShelfR.coefficients = shapeCoeffs;
-        outputLoShelfL.coefficients = unityCoeffs;
-        outputLoShelfR.coefficients = unityCoeffs;
-    }
-    else
-    {
-        // Boost: feedback path stays flat, apply boost at output only
-        loShelfL.coefficients = unityCoeffs;
-        loShelfR.coefficients = unityCoeffs;
-        outputLoShelfL.coefficients = shapeCoeffs;
-        outputLoShelfR.coefficients = shapeCoeffs;
-    }
+    // Output path: boost only (std::max guarantees gain >= 0 dB, outside the loop)
+    float outputGain = juce::Decibels::decibelsToGain(std::max(dB, 0.0f));
+    auto outCoeffs = juce::dsp::IIR::Coefficients<float>::makeLowShelf(
+        currentSampleRate, 350.0f, resonanceQ, outputGain);
+    outputLoShelfL.coefficients = outCoeffs;
+    outputLoShelfR.coefficients = outCoeffs;
 }
 
 void ReverbEngine::setHiEQ(float dB)
 {
     currentHiEQdB = dB;
 
-    auto unityCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighShelf(
-        currentSampleRate, 2000.0f, resonanceQ, 1.0f);
-    auto shapeCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighShelf(
-        currentSampleRate, 2000.0f, resonanceQ, juce::Decibels::decibelsToGain(dB));
+    // Feedback path: cut only
+    float feedbackGain = juce::Decibels::decibelsToGain(std::min(dB, 0.0f));
+    auto fbCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighShelf(
+        currentSampleRate, 2000.0f, resonanceQ, feedbackGain);
+    feedbackHiShelfL.coefficients = fbCoeffs;
+    feedbackHiShelfR.coefficients = fbCoeffs;
 
-    if (dB <= 0.0f)
-    {
-        // Cut: apply in feedback path to shape decay, output stays flat
-        hiShelfL.coefficients = shapeCoeffs;
-        hiShelfR.coefficients = shapeCoeffs;
-        outputHiShelfL.coefficients = unityCoeffs;
-        outputHiShelfR.coefficients = unityCoeffs;
-    }
-    else
-    {
-        // Boost: feedback path stays flat, apply boost at output only
-        hiShelfL.coefficients = unityCoeffs;
-        hiShelfR.coefficients = unityCoeffs;
-        outputHiShelfL.coefficients = shapeCoeffs;
-        outputHiShelfR.coefficients = shapeCoeffs;
-    }
+    // Output path: boost only
+    float outputGain = juce::Decibels::decibelsToGain(std::max(dB, 0.0f));
+    auto outCoeffs = juce::dsp::IIR::Coefficients<float>::makeHighShelf(
+        currentSampleRate, 2000.0f, resonanceQ, outputGain);
+    outputHiShelfL.coefficients = outCoeffs;
+    outputHiShelfR.coefficients = outCoeffs;
 }
 
 void ReverbEngine::setResonance(float percent)
 {
-    resonanceQ = juce::jmap(percent, 0.0f, 100.0f, 0.707f, 4.0f);
-    // Re-apply EQ so shelving filters use the new Q
+    currentResonance = percent;
+
+    if (percent < 0.5f)
+    {
+        // Off — flat peaking filters (unity gain)
+        auto flatLo = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+            currentSampleRate, 350.0f, 1.0f, 1.0f);
+        resPeakLoL.coefficients = flatLo;
+        resPeakLoR.coefficients = flatLo;
+
+        auto flatHi = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+            currentSampleRate, 2000.0f, 1.0f, 1.0f);
+        resPeakHiL.coefficients = flatHi;
+        resPeakHiR.coefficients = flatHi;
+    }
+    else
+    {
+        float q = juce::jmap(percent, 0.0f, 100.0f, 0.5f, 6.0f);
+
+        // Scale max peak gain inversely with feedback:
+        // Low feedback (0.0)   → up to +6 dB — strong resonant character
+        // High feedback (0.85) → up to +1.5 dB — prevents compounding through the loop
+        float maxGainDB = juce::jmap(feedbackAmount, 0.0f, 0.85f, 6.0f, 1.5f);
+        float gainDB    = juce::jmap(percent, 0.0f, 100.0f, 0.0f, maxGainDB);
+        float gain      = juce::Decibels::decibelsToGain(gainDB);
+
+        auto loCoeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+            currentSampleRate, 350.0f, q, gain);
+        resPeakLoL.coefficients = loCoeffs;
+        resPeakLoR.coefficients = loCoeffs;
+
+        auto hiCoeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+            currentSampleRate, 2000.0f, q, gain);
+        resPeakHiL.coefficients = hiCoeffs;
+        resPeakHiR.coefficients = hiCoeffs;
+    }
+
+    // Update shelving Q and re-apply EQ so shelf shape tracks resonance
+    resonanceQ = juce::jmap(percent, 0.0f, 100.0f, 0.707f, 2.0f);
     setLoEQ(currentLoEQdB);
     setHiEQ(currentHiEQdB);
 }
@@ -251,13 +262,13 @@ void ReverbEngine::setKillDry(bool kill)
 
 void ReverbEngine::process(juce::AudioBuffer<float>& buffer)
 {
-    const int numSamples = buffer.getNumSamples();
+    const int numSamples  = buffer.getNumSamples();
     const int numChannels = buffer.getNumChannels();
 
     if (numChannels == 0)
         return;
 
-    auto* leftData = buffer.getWritePointer(0);
+    auto* leftData  = buffer.getWritePointer(0);
     auto* rightData = numChannels > 1 ? buffer.getWritePointer(1) : leftData;
 
     for (int n = 0; n < numSamples; ++n)
@@ -265,65 +276,70 @@ void ReverbEngine::process(juce::AudioBuffer<float>& buffer)
         // 1. Sum stereo input to mono
         float monoIn = (leftData[n] + rightData[n]) * 0.5f;
 
-        // 2. Process feedback through damping filters BEFORE adding to input
-        float feedbackL = prevFeedbackL;
-        float feedbackR = prevFeedbackR;
-
-        // Determine actual feedback coefficient
+        // 2. Build feedback signal by running prev output through damping chain
         float actualFeedback = feedbackAmount;
+        float feedbackL, feedbackR;
+
         if (isFrozen)
         {
-            // Freeze mode: very high feedback for near-infinite sustain
+            // Freeze: very high feedback, bypass all damping
             actualFeedback = 0.995f;
-            // Skip damping - feedback passes through unchanged
+            feedbackL = prevFeedbackL;
+            feedbackR = prevFeedbackR;
         }
         else
         {
-            // Normal mode: apply full damping chain to feedback
-            feedbackL = feedbackDampingL.processSample(feedbackL);
-            feedbackL = loShelfL.processSample(feedbackL);
-            feedbackL = hiShelfL.processSample(feedbackL);
-            feedbackR = feedbackDampingR.processSample(feedbackR);
-            feedbackR = loShelfR.processSample(feedbackR);
-            feedbackR = hiShelfR.processSample(feedbackR);
+            // Normal: full damping chain
+            // Band-limiting: LP at 10kHz (hi roll-off) + HP at 80Hz (lo roll-off)
+            feedbackL = feedbackDampingL.processSample(prevFeedbackL);
+            feedbackL = feedbackHPL.processSample(feedbackL);
+            // Resonance peaks boost selected frequencies in the loop (causes them to ring longer)
+            feedbackL = resPeakLoL.processSample(feedbackL);
+            feedbackL = resPeakHiL.processSample(feedbackL);
+            // Cut-only EQ shelves (user Lo/Hi EQ, negative dB only)
+            feedbackL = feedbackLoShelfL.processSample(feedbackL);
+            feedbackL = feedbackHiShelfL.processSample(feedbackL);
+
+            feedbackR = feedbackDampingR.processSample(prevFeedbackR);
+            feedbackR = feedbackHPR.processSample(feedbackR);
+            feedbackR = resPeakLoR.processSample(feedbackR);
+            feedbackR = resPeakHiR.processSample(feedbackR);
+            feedbackR = feedbackLoShelfR.processSample(feedbackR);
+            feedbackR = feedbackHiShelfR.processSample(feedbackR);
         }
 
-        // 3. If freeze is active, kill new input
+        // 3. Freeze kills new input
         if (isFrozen)
             monoIn = 0.0f;
 
-        // 4. Add damped feedback from previous iteration (average of L/R)
+        // 4. Inject damped feedback (average L+R to keep it mono before the allpass chain)
         monoIn += (feedbackL + feedbackR) * 0.5f * actualFeedback;
 
-        // 5. Soft-clip to prevent blowup at high feedback
+        // 5. Soft-clip before the allpass chain
         monoIn = std::tanh(monoIn);
 
-        // 6. Pre-delay with safe buffer access
-        int safeWritePos = preDelayWritePos & preDelayMask;
-        preDelayBuffer[safeWritePos] = monoIn;
-
-        // Calculate read position with proper wrapping to handle negative values
+        // 6. Pre-delay
+        preDelayBuffer[preDelayWritePos & preDelayMask] = monoIn;
         int delayOffset = static_cast<int>(preDelaySamples);
         int readIdx = (preDelayWritePos - delayOffset + static_cast<int>(preDelayBuffer.size())) & preDelayMask;
         monoIn = preDelayBuffer[readIdx];
-
         preDelayWritePos = (preDelayWritePos + 1) & preDelayMask;
 
-        // 7. Process through shared allpass chain (mono, in series)
+        // 7. Shared allpass chain (mono)
         float signal = monoIn;
         for (int i = 0; i < kNumSharedAllpasses; ++i)
         {
-            float lfoValue = std::sin(sharedLfoPhases[i]) * modDepthSamples;
+            float lfo = std::sin(sharedLfoPhases[i]) * modDepthSamples;
             sharedLfoPhases[i] += lfoPhaseInc;
             if (sharedLfoPhases[i] >= juce::MathConstants<float>::twoPi)
                 sharedLfoPhases[i] -= juce::MathConstants<float>::twoPi;
 
-            sharedAllpasses[i].setModOffset(isFrozen ? 0.0f : lfoValue);
+            sharedAllpasses[i].setModOffset(isFrozen ? 0.0f : lfo);
             signal = sharedAllpasses[i].processSampleModulated(signal);
         }
 
-        // 8. Split to stereo and process per-channel allpass chains
-        float left = signal;
+        // 8. Per-channel allpass chains (stereo split)
+        float left  = signal;
         float right = signal;
 
         for (int i = 0; i < kNumChannelAllpasses; ++i)
@@ -332,7 +348,6 @@ void ReverbEngine::process(juce::AudioBuffer<float>& buffer)
             leftLfoPhases[i] += lfoPhaseInc;
             if (leftLfoPhases[i] >= juce::MathConstants<float>::twoPi)
                 leftLfoPhases[i] -= juce::MathConstants<float>::twoPi;
-
             leftAllpasses[i].setModOffset(isFrozen ? 0.0f : lfoL);
             left = leftAllpasses[i].processSampleModulated(left);
 
@@ -340,75 +355,73 @@ void ReverbEngine::process(juce::AudioBuffer<float>& buffer)
             rightLfoPhases[i] += lfoPhaseInc;
             if (rightLfoPhases[i] >= juce::MathConstants<float>::twoPi)
                 rightLfoPhases[i] -= juce::MathConstants<float>::twoPi;
-
             rightAllpasses[i].setModOffset(isFrozen ? 0.0f : lfoR);
             right = rightAllpasses[i].processSampleModulated(right);
         }
 
-        // 9. Apply output EQ (boost only — safe outside feedback loop)
+        // 9. Store output for next feedback iteration BEFORE output EQ
+        //    (output EQ boost should not re-enter the feedback loop)
+        prevFeedbackL = left;
+        prevFeedbackR = right;
+
+        // 10. Output EQ (boost only — safe outside feedback loop)
         left  = outputLoShelfL.processSample(left);
         left  = outputHiShelfL.processSample(left);
         right = outputLoShelfR.processSample(right);
         right = outputHiShelfR.processSample(right);
 
-        // 10. Hard clipping safety to prevent ANY runaway conditions
-        left = std::clamp(left, -4.0f, 4.0f);
+        // 11. Safety clamp + NaN protection
+        left  = std::clamp(left,  -4.0f, 4.0f);
         right = std::clamp(right, -4.0f, 4.0f);
 
-        // 11. NaN and denormal protection
-        if (std::isnan(left) || std::isinf(left))
-            left = 0.0f;
-        if (std::isnan(right) || std::isinf(right))
-            right = 0.0f;
+        if (std::isnan(left)  || std::isinf(left))  left  = 0.0f;
+        if (std::isnan(right) || std::isinf(right)) right = 0.0f;
 
-        // Add tiny DC offset to prevent denormals
-        left += 1e-25f;
+        left  += 1e-25f;  // denormal prevention
         right += 1e-25f;
 
-        // 12. Store RAW output for feedback on next sample
-        // The damping filters will be applied to this BEFORE adding to input
-        prevFeedbackL = left;
-        prevFeedbackR = right;
-
-        // 13. Write to output buffer (wet signal only)
-        leftData[n] = left;
+        // 12. Write output
+        leftData[n]  = left;
         rightData[n] = right;
     }
 }
 
 void ReverbEngine::reset()
 {
-    // Reset all allpasses
     for (int i = 0; i < kNumSharedAllpasses; ++i)
         sharedAllpasses[i].reset();
-
     for (int i = 0; i < kNumChannelAllpasses; ++i)
     {
         leftAllpasses[i].reset();
         rightAllpasses[i].reset();
     }
 
-    // Zero pre-delay buffer
     std::fill(preDelayBuffer.begin(), preDelayBuffer.end(), 0.0f);
     preDelayWritePos = 0;
 
-    // Reset all filters
-    loShelfL.reset();
-    loShelfR.reset();
-    hiShelfL.reset();
-    hiShelfR.reset();
+    // Reset feedback path filters
+    feedbackDampingL.reset();
+    feedbackDampingR.reset();
+    feedbackHPL.reset();
+    feedbackHPR.reset();
+    resPeakLoL.reset();
+    resPeakLoR.reset();
+    resPeakHiL.reset();
+    resPeakHiR.reset();
+    feedbackLoShelfL.reset();
+    feedbackLoShelfR.reset();
+    feedbackHiShelfL.reset();
+    feedbackHiShelfR.reset();
+
+    // Reset output path filters
     outputLoShelfL.reset();
     outputLoShelfR.reset();
     outputHiShelfL.reset();
     outputHiShelfR.reset();
-    feedbackDampingL.reset();
-    feedbackDampingR.reset();
 
-    // Zero feedback
     prevFeedbackL = 0.0f;
     prevFeedbackR = 0.0f;
 
-    // Reset LFO phases to initial distribution
     for (int i = 0; i < kNumSharedAllpasses; ++i)
         sharedLfoPhases[i] = (juce::MathConstants<float>::twoPi * i) / kNumSharedAllpasses;
 

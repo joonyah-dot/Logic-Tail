@@ -48,21 +48,25 @@ private:
     int preDelayWritePos = 0;
     float preDelaySamples = 0.0f;
 
-    // Feedback path shelving EQ (cut only — boost here causes runaway)
-    juce::dsp::IIR::Filter<float> loShelfL;
-    juce::dsp::IIR::Filter<float> loShelfR;
-    juce::dsp::IIR::Filter<float> hiShelfL;
-    juce::dsp::IIR::Filter<float> hiShelfR;
+    // Feedback path filters (applied every iteration — cuts only, never boost)
+    juce::dsp::IIR::Filter<float> feedbackDampingL;      // LP at 10kHz — hi decay
+    juce::dsp::IIR::Filter<float> feedbackDampingR;
+    juce::dsp::IIR::Filter<float> feedbackHPL;           // HP at 80Hz — lo decay
+    juce::dsp::IIR::Filter<float> feedbackHPR;
+    juce::dsp::IIR::Filter<float> resPeakLoL;            // Resonance peak at 350 Hz
+    juce::dsp::IIR::Filter<float> resPeakLoR;
+    juce::dsp::IIR::Filter<float> resPeakHiL;            // Resonance peak at 2000 Hz
+    juce::dsp::IIR::Filter<float> resPeakHiR;
+    juce::dsp::IIR::Filter<float> feedbackLoShelfL;      // Lo shelf cut-only
+    juce::dsp::IIR::Filter<float> feedbackLoShelfR;
+    juce::dsp::IIR::Filter<float> feedbackHiShelfL;      // Hi shelf cut-only
+    juce::dsp::IIR::Filter<float> feedbackHiShelfR;
 
-    // Output shelving EQ (boost only — applied after the feedback loop)
+    // Output path filters (applied once before output — boost only, safe outside loop)
     juce::dsp::IIR::Filter<float> outputLoShelfL;
     juce::dsp::IIR::Filter<float> outputLoShelfR;
     juce::dsp::IIR::Filter<float> outputHiShelfL;
     juce::dsp::IIR::Filter<float> outputHiShelfR;
-
-    // Dedicated feedback damping filters (always-on decay)
-    juce::dsp::IIR::Filter<float> feedbackDampingL;
-    juce::dsp::IIR::Filter<float> feedbackDampingR;
 
     // LFO phases (one per allpass)
     float sharedLfoPhases[kNumSharedAllpasses];
@@ -80,6 +84,7 @@ private:
     float prevFeedbackR = 0.0f;
     float currentLoEQdB = 0.0f;
     float currentHiEQdB = 0.0f;
+    float currentResonance = 0.0f;
     float resonanceQ = 0.707f;
     bool isFrozen = false;
     bool killDrySignal = false;
