@@ -1,0 +1,17 @@
+{
+  "_comment": "Stress: max Gravity (1.0), max Size (1.0), max Feedback (1.0). Should produce near-infinite tail with no NaN/Inf.",
+  "warmupMs": 200,
+  "renderSeconds": 6.0,
+  "paramsByName": {
+    "Gravity":   1.0,
+    "Size":      1.0,
+    "Resonance": 0.0,
+    "Lo EQ":     0.5,
+    "Hi EQ":     0.5,
+    "Balance":   1.0,
+    "Mix":       1.0
+  },
+  "paramsByIndex": {
+    "3": 1.0
+  }
+}

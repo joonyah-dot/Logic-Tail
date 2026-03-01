@@ -241,17 +241,15 @@ void ReverbEngine::updateResonancePeaks()
     // Base max gain scales inversely with feedback (prevents loop compounding)
     float maxGainDB = juce::jmap(feedbackAmount, 0.0f, 0.85f, 6.0f, 1.5f);
 
-    // EQ penalty: when a shelf is cutting, reduce the corresponding peak gain.
-    // At -12 dB cut the penalty is 0.0 (peak disabled), at 0 dB it is 1.0 (no penalty).
-    float loEQPenalty = (currentLoEQdB < 0.0f)
-        ? juce::jlimit(0.0f, 1.0f, juce::jmap(currentLoEQdB, -12.0f, 0.0f, 0.0f, 1.0f))
-        : 1.0f;
-    float hiEQPenalty = (currentHiEQdB < 0.0f)
-        ? juce::jlimit(0.0f, 1.0f, juce::jmap(currentHiEQdB, -12.0f, 0.0f, 0.0f, 1.0f))
-        : 1.0f;
-
-    float loGainDB = juce::jmap(currentResonance, 0.0f, 100.0f, 0.0f, maxGainDB) * loEQPenalty;
-    float hiGainDB = juce::jmap(currentResonance, 0.0f, 100.0f, 0.0f, maxGainDB) * hiEQPenalty;
+    // Hard disable: any Lo EQ cut fully disables the Lo resonance peak, and vice versa
+    // for Hi. A cutting shelf and a boosting peak at the same frequency in the feedback
+    // loop interact to create net gain at the filter slopes, causing runaway.
+    float loGainDB = (currentLoEQdB >= 0.0f)
+        ? juce::jmap(currentResonance, 0.0f, 100.0f, 0.0f, maxGainDB)
+        : 0.0f;
+    float hiGainDB = (currentHiEQdB >= 0.0f)
+        ? juce::jmap(currentResonance, 0.0f, 100.0f, 0.0f, maxGainDB)
+        : 0.0f;
 
     auto loCoeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
         currentSampleRate, 350.0f, q, juce::Decibels::decibelsToGain(loGainDB));

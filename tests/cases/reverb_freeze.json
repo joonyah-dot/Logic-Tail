@@ -1,0 +1,15 @@
+{
+  "_comment": "Freeze mode: Freeze=1.0 (true), Feedback=50%. Input is killed internally; tail should sustain without growing.",
+  "warmupMs": 500,
+  "renderSeconds": 5.0,
+  "paramsByName": {
+    "Gravity":  0.75,
+    "Size":     0.5,
+    "Freeze":   1.0,
+    "Balance":  1.0,
+    "Mix":      1.0
+  },
+  "paramsByIndex": {
+    "3": 0.5
+  }
+}

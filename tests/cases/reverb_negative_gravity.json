@@ -1,0 +1,14 @@
+{
+  "_comment": "Negative gravity: Gravity=-100 (normalized 0.0). Reverse/swell character. Should be stable with no NaN.",
+  "warmupMs": 200,
+  "renderSeconds": 4.0,
+  "paramsByName": {
+    "Gravity":  0.0,
+    "Size":     0.5,
+    "Balance":  1.0,
+    "Mix":      1.0
+  },
+  "paramsByIndex": {
+    "3": 0.5
+  }
+}

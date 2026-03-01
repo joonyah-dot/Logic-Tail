@@ -4,6 +4,11 @@ project(LogicTail VERSION 0.1.0)
 
 add_subdirectory(extern/JUCE)
 
+option(BUILD_VST3_HARNESS "Build VST3 harness CLI tool" ON)
+if(BUILD_VST3_HARNESS)
+    add_subdirectory(tools/vst3_harness)
+endif()
+
 juce_add_plugin(LogicTail
     COMPANY_NAME "KyleAudio"
     IS_SYNTH FALSE

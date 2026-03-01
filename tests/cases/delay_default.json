@@ -1,0 +1,9 @@
+{
+  "_comment": "Delay only: Balance=0.0 (100% delay). HP Filter 80Hz normalized: (80-20)/(2000-20)=0.030, LP Filter 8000Hz normalized: (8000-200)/(20000-200)=0.393. These use skewed NormalisableRange so normalized values differ from linear — use paramsByName with display values normalized manually.",
+  "warmupMs": 50,
+  "renderSeconds": 3.0,
+  "paramsByName": {
+    "Balance": 0.0,
+    "Mix":     1.0
+  }
+}

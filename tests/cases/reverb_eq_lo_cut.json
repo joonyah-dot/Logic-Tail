@@ -1,0 +1,16 @@
+{
+  "_comment": "Stability: Lo EQ -12dB (normalized 0.0), Resonance 100%, Feedback 100%. Resonance Lo peak must be disabled by hard cutoff. No NaN expected.",
+  "warmupMs": 200,
+  "renderSeconds": 4.0,
+  "paramsByName": {
+    "Gravity":   0.75,
+    "Size":      0.5,
+    "Lo EQ":     0.0,
+    "Resonance": 1.0,
+    "Balance":   1.0,
+    "Mix":       1.0
+  },
+  "paramsByIndex": {
+    "3": 1.0
+  }
+}

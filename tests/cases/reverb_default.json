@@ -1,0 +1,19 @@
+{
+  "_comment": "Baseline: default reverb settings. Gravity=50 (0.75), Size=60 (0.5), Feedback=25% (0.25). Balance=1.0=100% reverb.",
+  "warmupMs": 100,
+  "renderSeconds": 4.0,
+  "paramsByName": {
+    "Gravity":   0.75,
+    "Size":      0.5,
+    "Pre-Delay": 0.02,
+    "Resonance": 0.0,
+    "Lo EQ":     0.5,
+    "Hi EQ":     0.5,
+    "Mod Depth": 0.4,
+    "Balance":   1.0,
+    "Mix":       1.0
+  },
+  "paramsByIndex": {
+    "3": 0.25
+  }
+}
