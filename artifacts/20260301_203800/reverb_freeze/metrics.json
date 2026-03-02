@@ -1,0 +1,21 @@
+{
+  "sampleRate": 44100.0,
+  "channels": 2,
+  "numSamples": 220500,
+  "detectedLatencySamples": 0,
+  "wetPeakDbfs": -160.0,
+  "wetRmsDbfs": -160.0,
+  "wetPeakDbfsPerChannel": [
+    -160.0,
+    -160.0
+  ],
+  "wetRmsDbfsPerChannel": [
+    -160.0,
+    -160.0
+  ],
+  "correlation": 0.0,
+  "hasNaNOrInfWet": false,
+  "hasNaNOrInfDelta": false,
+  "deltaPeakDbfs": -0.915503263473511,
+  "deltaRmsDbfs": -54.349590301513672
+}

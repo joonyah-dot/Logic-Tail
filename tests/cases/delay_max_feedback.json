@@ -1,0 +1,15 @@
+{
+  "_comment": "Stress test: max feedback (95%), ping-pong ON, high modulation. Must not NaN/Inf.",
+  "warmupMs": 50,
+  "renderSeconds": 6.0,
+  "paramsByName": {
+    "Balance":    0.0,
+    "Mix":        1.0,
+    "Ping Pong":  1.0
+  },
+  "paramsByIndex": {
+    "14": 1.0,
+    "16": 0.70,
+    "17": 0.90
+  }
+}

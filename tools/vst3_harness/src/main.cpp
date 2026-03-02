@@ -683,6 +683,32 @@ LevelMetrics computeLevels(const juce::AudioBuffer<float>& buffer)
     return metrics;
 }
 
+// Returns one LevelMetrics per channel in the buffer.
+std::vector<LevelMetrics> computeChannelLevels(const juce::AudioBuffer<float>& buffer)
+{
+    const int numChannels = buffer.getNumChannels();
+    const int numSamples  = buffer.getNumSamples();
+    std::vector<LevelMetrics> result(static_cast<size_t>(numChannels));
+
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        if (numSamples <= 0) continue;
+        const float* samples = buffer.getReadPointer(ch);
+        double peak = 0.0;
+        double sumSquares = 0.0;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const double v = static_cast<double>(samples[i]);
+            peak = std::max(peak, std::abs(v));
+            sumSquares += v * v;
+        }
+        const double rms = std::sqrt(sumSquares / static_cast<double>(numSamples));
+        result[static_cast<size_t>(ch)].peakDbfs = juce::Decibels::gainToDecibels(static_cast<float>(peak), -160.0f);
+        result[static_cast<size_t>(ch)].rmsDbfs  = juce::Decibels::gainToDecibels(static_cast<float>(rms),  -160.0f);
+    }
+    return result;
+}
+
 std::vector<float> makeMonoSum(const juce::AudioBuffer<float>& buffer)
 {
     const int channels = buffer.getNumChannels();
@@ -1011,6 +1037,7 @@ int runAnalyze(const OptionMap& options)
     const auto dryAligned = shiftAndResize(dryAudio.buffer, channels, targetSamples, 0);
     const auto wetAligned = shiftAndResize(wetAudio.buffer, channels, targetSamples, -detectedLatencySamples);
     const auto wetMetrics = computeLevels(wetAligned);
+    const auto wetChannelMetrics = computeChannelLevels(wetAligned);
     const double correlation = computeCorrelation(dryAligned, wetAligned);
     const bool hasNaNOrInfWet = containsNaNOrInf(wetAligned);
 
@@ -1046,6 +1073,17 @@ int runAnalyze(const OptionMap& options)
     metricsObject->setProperty("detectedLatencySamples", detectedLatencySamples);
     metricsObject->setProperty("wetPeakDbfs", wetMetrics.peakDbfs);
     metricsObject->setProperty("wetRmsDbfs", wetMetrics.rmsDbfs);
+
+    // Per-channel breakdown (useful for verifying spatial effects like ping-pong)
+    juce::Array<juce::var> chPeaks, chRms;
+    for (const auto& chMetric : wetChannelMetrics)
+    {
+        chPeaks.add(chMetric.peakDbfs);
+        chRms.add(chMetric.rmsDbfs);
+    }
+    metricsObject->setProperty("wetPeakDbfsPerChannel", chPeaks);
+    metricsObject->setProperty("wetRmsDbfsPerChannel", chRms);
+
     metricsObject->setProperty("correlation", correlation);
     metricsObject->setProperty("hasNaNOrInfWet", hasNaNOrInfWet);
     metricsObject->setProperty("hasNaNOrInfDelta", hasNaNOrInfDelta);

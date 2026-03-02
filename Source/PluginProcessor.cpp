@@ -45,10 +45,17 @@ void LogicTailAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     bool killDry = apvts.getRawParameterValue(ParameterIDs::reverb_kill_dry)->load() > 0.5f;
 
     // Read delay parameters
-    float delTime = apvts.getRawParameterValue(ParameterIDs::delay_time)->load();
+    float delTime     = apvts.getRawParameterValue(ParameterIDs::delay_time)->load();
     float delFeedback = apvts.getRawParameterValue(ParameterIDs::delay_feedback)->load();
-    float delHP = apvts.getRawParameterValue(ParameterIDs::delay_hp)->load();
-    float delLP = apvts.getRawParameterValue(ParameterIDs::delay_lp)->load();
+    float delHP       = apvts.getRawParameterValue(ParameterIDs::delay_hp)->load();
+    float delLP       = apvts.getRawParameterValue(ParameterIDs::delay_lp)->load();
+    bool  delSync     = apvts.getRawParameterValue(ParameterIDs::delay_sync)->load() > 0.5f;
+    // AudioParameterChoice stores the selected index as a float directly
+    int   delDivision = static_cast<int>(
+        apvts.getRawParameterValue(ParameterIDs::delay_division)->load());
+    bool  delPingPong = apvts.getRawParameterValue(ParameterIDs::delay_pingpong)->load() > 0.5f;
+    float delModRate  = apvts.getRawParameterValue(ParameterIDs::delay_mod_rate)->load();
+    float delModDepth = apvts.getRawParameterValue(ParameterIDs::delay_mod_depth)->load();
 
     // Read global parameters
     int routingIdx = static_cast<int>(apvts.getRawParameterValue(ParameterIDs::routing_mode)->load());
@@ -70,10 +77,26 @@ void LogicTailAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     reverbEngine.setKillDry(killDry);
 
     // Update delay engine
-    delayEngine.setDelayTime(delTime);
+    // BPM from DAW playhead (fallback 120 when offline/no transport)
+    double bpm = 120.0;
+    if (auto* ph = getPlayHead())
+        if (auto pos = ph->getPosition())
+            if (pos->getBpm().hasValue())
+                bpm = *pos->getBpm();
+
+    if (delSync)
+        delayEngine.setTempoSync(true, bpm, delDivision);
+    else
+    {
+        delayEngine.setTempoSync(false, 0.0, 0);
+        delayEngine.setDelayTime(delTime);
+    }
+
     delayEngine.setFeedback(delFeedback);
     delayEngine.setHighPassFreq(delHP);
     delayEngine.setLowPassFreq(delLP);
+    delayEngine.setPingPong(delPingPong);
+    delayEngine.setModulation(delModRate, delModDepth);
 
     // Apply input gain
     buffer.applyGain(inGain);

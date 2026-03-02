@@ -1,0 +1,15 @@
+{
+  "_comment": "Delay with modulation. 80% depth, ~1.5Hz rate. Chorus/wobble on echoes. idx16=Mod Rate(delay), idx17=Mod Depth(delay).",
+  "warmupMs": 50,
+  "renderSeconds": 3.0,
+  "paramsByName": {
+    "Balance":    0.0,
+    "Mix":        1.0,
+    "Ping Pong":  0.0
+  },
+  "paramsByIndex": {
+    "14": 0.42,
+    "16": 0.55,
+    "17": 0.80
+  }
+}

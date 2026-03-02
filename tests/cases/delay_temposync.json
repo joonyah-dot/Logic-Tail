@@ -1,0 +1,15 @@
+{
+  "_comment": "Tempo-synced 1/4-note delay. Fallback BPM=120 => 500ms. Sync=ON (idx12), Division=1/4 (idx13, idx8 of 14 items => norm=8/13=0.615).",
+  "warmupMs": 50,
+  "renderSeconds": 4.0,
+  "paramsByName": {
+    "Balance":    0.0,
+    "Mix":        1.0,
+    "Tempo Sync": 1.0,
+    "Ping Pong":  0.0
+  },
+  "paramsByIndex": {
+    "13": 0.615,
+    "14": 0.42
+  }
+}

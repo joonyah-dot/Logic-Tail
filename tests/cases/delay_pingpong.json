@@ -1,0 +1,13 @@
+{
+  "_comment": "Ping-pong delay. Balance=0 (delay only). ~60% feedback. Echoes alternate L/R.",
+  "warmupMs": 50,
+  "renderSeconds": 4.0,
+  "paramsByName": {
+    "Balance":    0.0,
+    "Mix":        1.0,
+    "Ping Pong":  1.0
+  },
+  "paramsByIndex": {
+    "14": 0.63
+  }
+}

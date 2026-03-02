@@ -1,0 +1,15 @@
+{
+  "_comment": "Combined ping-pong + modulation. Verifies both features together without NaN/blowup.",
+  "warmupMs": 50,
+  "renderSeconds": 4.0,
+  "paramsByName": {
+    "Balance":    0.0,
+    "Mix":        1.0,
+    "Ping Pong":  1.0
+  },
+  "paramsByIndex": {
+    "14": 0.55,
+    "16": 0.45,
+    "17": 0.60
+  }
+}

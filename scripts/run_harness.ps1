@@ -105,6 +105,35 @@ function Invoke-Case {  # approved verb: Invoke
     }
 }
 
+# -- Helper: verify ping-pong L/R asymmetry from per-channel metrics --------------
+# True ping-pong alternates echoes strictly L then R, so L and R RMS must differ
+# significantly. If they're within 1 dB of each other, the effect isn't working.
+function Test-PingPong {
+    param([string]$Name)
+    $metricsFile = Join-Path $artifacts "$Name\metrics.json"
+    if (-not (Test-Path $metricsFile)) { return }
+
+    $m = Get-Content $metricsFile | ConvertFrom-Json
+    $perCh = $m.wetRmsDbfsPerChannel
+    if ($perCh.Count -lt 2) {
+        Write-Warning "  [ping-pong check] Not enough channels in $Name metrics"
+        $script:failCount++
+        return
+    }
+
+    $lRms = [double]$perCh[0]
+    $rRms = [double]$perCh[1]
+    $diff = [Math]::Abs($lRms - $rRms)
+
+    if ($diff -lt 1.0) {
+        Write-Warning "  [ping-pong check] FAIL: L RMS $([Math]::Round($lRms,1)) dB, R RMS $([Math]::Round($rRms,1)) dB -- diff $([Math]::Round($diff,1)) dB (expected > 1 dB for alternating echoes)"
+        $script:failCount++
+        $script:passCount--  # undo the pass counted by Invoke-Case
+    } else {
+        Write-Host "  [ping-pong check] PASS: L RMS $([Math]::Round($lRms,1)) dB, R RMS $([Math]::Round($rRms,1)) dB -- diff $([Math]::Round($diff,1)) dB" -ForegroundColor Green
+    }
+}
+
 # -- Run all cases ----------------------------------------------------------------
 $cases = Join-Path $tests "cases"
 if (-not (Test-Path $cases)) {
@@ -113,6 +142,10 @@ if (-not (Test-Path $cases)) {
 
 Get-ChildItem $cases -Filter "*.json" | Sort-Object Name | ForEach-Object {
     Invoke-Case -Name $_.BaseName -CaseJson $_.FullName
+    # Extra spatial check for ping-pong cases
+    if ($_.BaseName -like "*pingpong*") {
+        Test-PingPong -Name $_.BaseName
+    }
 }
 
 # Summary

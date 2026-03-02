@@ -1,0 +1,16 @@
+{
+  "_comment": "Series routing: Delay -> Reverb. Routing=0.0 (D>R, 3 choices: 0=D>R, 0.5=R>D, 1=Parallel). Both engines at moderate settings.",
+  "warmupMs": 100,
+  "renderSeconds": 5.0,
+  "paramsByName": {
+    "Routing":  0.0,
+    "Mix":      1.0,
+    "Gravity":  0.75,
+    "Size":     0.5,
+    "Balance":  0.5
+  },
+  "paramsByIndex": {
+    "3":  0.30,
+    "14": 0.40
+  }
+}

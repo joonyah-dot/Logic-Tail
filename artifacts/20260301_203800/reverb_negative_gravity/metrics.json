@@ -1,0 +1,21 @@
+{
+  "sampleRate": 44100.0,
+  "channels": 2,
+  "numSamples": 178164,
+  "detectedLatencySamples": 1764,
+  "wetPeakDbfs": -39.799293518066406,
+  "wetRmsDbfs": -62.521762847900391,
+  "wetPeakDbfsPerChannel": [
+    -40.552867889404297,
+    -39.799293518066406
+  ],
+  "wetRmsDbfsPerChannel": [
+    -62.5289306640625,
+    -62.514606475830078
+  ],
+  "correlation": 0.010608138193595,
+  "hasNaNOrInfWet": false,
+  "hasNaNOrInfDelta": false,
+  "deltaPeakDbfs": -0.938507556915283,
+  "deltaRmsDbfs": -52.940093994140625
+}
